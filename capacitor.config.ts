@@ -6,10 +6,8 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     androidScheme: 'https',
-    // In development, point to your Replit dev URL for hot-reload
-    // For production builds this is unused (assets are bundled locally)
-    // url: 'https://your-replit-url.replit.dev',
-    cleartext: true
+    cleartext: false,
+    allowNavigation: []
   },
   plugins: {
     SplashScreen: {
@@ -21,16 +19,22 @@ const config: CapacitorConfig = {
       splashFullScreen: true,
       splashImmersive: true,
     },
+    Permissions: {
+      // Request permissions at app startup
+    },
   },
   android: {
-    allowMixedContent: true,
+    allowMixedContent: false,
     captureInput: true,
-    webContentsDebuggingEnabled: false
+    webContentsDebuggingEnabled: false,
+    // Use hardware-accelerated WebView for canvas performance
+    overrideUserAgent: 'UnNoted-Android/1.0'
   },
   ios: {
     contentInset: 'automatic',
     allowsLinkPreview: false,
-    scrollEnabled: true
+    scrollEnabled: true,
+    overrideUserAgent: 'UnNoted-iOS/1.0'
   }
 };
 

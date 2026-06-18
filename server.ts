@@ -339,11 +339,12 @@ app.post("/api/ai/validate-key", async (req, res) => {
       });
 
       // Simple, fast, low-cost token usage check to verify validity
+      // Use gemini-2.0-flash for validation (stable, no thinking-budget restrictions)
       await testAi.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: "Hi",
         config: {
-          maxOutputTokens: 2
+          maxOutputTokens: 5
         }
       });
 
