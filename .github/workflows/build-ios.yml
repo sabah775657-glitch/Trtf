@@ -1,4 +1,4 @@
-name: Build iOS IPA → Telegram
+name: Build iOS IPA
 
 on:
   push:
@@ -82,6 +82,8 @@ jobs:
           retention-days: 30
 
       - name: Send IPA to Telegram
+        if: success()
+        continue-on-error: true
         run: |
           IPA_PATH="output/UnNoted-iOS-unsigned-v${{ github.run_number }}.ipa"
           CAPTION="🍎 *UnNoted - iOS IPA (Unsigned)*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: ${{ github.sha }}%0A%0A⚠️ هذا ملف IPA غير موقع. لتثبيته استخدم AltStore أو Sideloadly على جهازك."
@@ -94,6 +96,7 @@ jobs:
 
       - name: Notify on failure
         if: failure()
+        continue-on-error: true
         run: |
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
