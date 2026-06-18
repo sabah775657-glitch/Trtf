@@ -1268,101 +1268,84 @@ export default function App() {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       const mr = mediaRecorderRef.current;
       const capturedLectureId = lecture.id;
-      const capturedCount = lecture.recordings.length;
+      const capturedCount = (lecture.recordings || []).length;
+      mediaRecorderRef.current = null;
       mr.onstop = async () => {
-        if (audioChunksRef.current.length === 0) return;
-        const mimeType = audioChunksRef.current[0]?.type || 'audio/webm';
-        const blob = new Blob(audioChunksRef.current, { type: mimeType });
-        pendingBlobsRef.current.set(recId, blob);
-        const url = URL.createObjectURL(blob);
-        blobUrlsRef.current.set(recId, url);
-        setPendingBlobIds(prev => new Set([...prev, recId]));
-        mr.stream.getTracks().forEach(t => t.stop());
-
-        // ✅ AUTO-TRANSCRIBE: send audio blob to Gemini immediately
-        const autoTitle = `🎙️ تسجيل صوتي (${capturedCount + 1})`;
-        const initialRec: AudioRecording = {
-          id: recId,
-          title: autoTitle,
-          durationSeconds: duration,
-          timestamp: new Date().toISOString(),
-          type: 'audio',
-          transcription: cleanTranscriptionValue || "🔄 جاري التفريغ التلقائي...",
-          audioBlobUrl: url,
-          markers: []
-        };
-        setAppState(prev => ({
-          ...prev,
-          lectures: prev.lectures.map(l =>
-            l.id === capturedLectureId
-              ? { ...l, recordings: [...l.recordings, initialRec] }
-              : l
-          )
-        }));
-
-        setIsTranscribing(recId);
         try {
-          const response = await fetch('/api/ai/transcribe', {
-            method: 'POST',
-            headers: { 'Content-Type': blob.type || 'audio/webm' },
-            body: blob,
-          });
-          if (!response.ok) throw new Error("فشل الخادم");
-          const data = await response.json();
-          const transcript = (data.transcript || "").trim();
-          if (transcript) {
-            setAppState(prev => ({
-              ...prev,
-              lectures: prev.lectures.map(l =>
-                l.id === capturedLectureId
-                  ? {
-                      ...l,
-                      lectureText: transcript,
-                      recordings: l.recordings.map(r =>
-                        r.id === recId ? { ...r, transcription: transcript } : r
-                      )
-                    }
-                  : l
-              )
-            }));
-            setLectureTextEdit(transcript);
-          }
-        } catch (e: any) {
-          console.warn("Auto-transcription failed:", e.message);
+          if (audioChunksRef.current.length === 0) return;
+          const mimeType = audioChunksRef.current[0]?.type || 'audio/webm';
+          const blob = new Blob(audioChunksRef.current, { type: mimeType });
+          audioChunksRef.current = [];
+          pendingBlobsRef.current.set(recId, blob);
+          const url = URL.createObjectURL(blob);
+          blobUrlsRef.current.set(recId, url);
+          setPendingBlobIds(prev => new Set([...prev, recId]));
+          try { mr.stream.getTracks().forEach(t => t.stop()); } catch(_) {}
+
+          const autoTitle = `🎙️ تسجيل صوتي (${capturedCount + 1})`;
+          const initialRec: AudioRecording = {
+            id: recId, title: autoTitle,
+            durationSeconds: duration, timestamp: new Date().toISOString(),
+            type: 'audio',
+            transcription: cleanTranscriptionValue || "🔄 جاري التفريغ التلقائي...",
+            audioBlobUrl: url, markers: []
+          };
           setAppState(prev => ({
             ...prev,
             lectures: prev.lectures.map(l =>
               l.id === capturedLectureId
-                ? {
-                    ...l,
-                    recordings: l.recordings.map(r =>
-                      r.id === recId
-                        ? { ...r, transcription: cleanTranscriptionValue || "⚠️ فشل التفريغ التلقائي — اضغط 'إعادة تحويل' يدوياً." }
-                        : r
-                    )
-                  }
+                ? { ...l, recordings: [...(l.recordings || []), initialRec] }
                 : l
             )
           }));
-        } finally {
+
+          setIsTranscribing(recId);
+          try {
+            const response = await fetch('/api/ai/transcribe', {
+              method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob,
+            });
+            if (!response.ok) throw new Error("فشل الخادم");
+            const data = await response.json();
+            const transcript = (data.transcript || "").trim();
+            if (transcript) {
+              setAppState(prev => ({
+                ...prev,
+                lectures: prev.lectures.map(l =>
+                  l.id === capturedLectureId
+                    ? { ...l, lectureText: transcript, recordings: (l.recordings || []).map(r => r.id === recId ? { ...r, transcription: transcript } : r) }
+                    : l
+                )
+              }));
+              setLectureTextEdit(transcript);
+            }
+          } catch (e: any) {
+            console.warn("Auto-transcription failed:", e.message);
+            setAppState(prev => ({
+              ...prev,
+              lectures: prev.lectures.map(l =>
+                l.id === capturedLectureId
+                  ? { ...l, recordings: (l.recordings || []).map(r => r.id === recId ? { ...r, transcription: cleanTranscriptionValue || "⚠️ فشل التفريغ التلقائي." } : r) }
+                  : l
+              )
+            }));
+          } finally {
+            setIsTranscribing(null);
+          }
+        } catch (outerErr) {
+          console.warn("Voice recording save error:", outerErr);
           setIsTranscribing(null);
         }
       };
       mr.stop();
-      mediaRecorderRef.current = null;
     } else {
       // No MediaRecorder — save with speech-to-text transcript
       const newRec: AudioRecording = {
         id: recId,
-        title: recordingTitle || `🎙️ تسجيل صوتي (${lecture.recordings.length + 1})`,
-        durationSeconds: duration,
-        timestamp: new Date().toISOString(),
-        type: 'audio',
-        transcription: cleanTranscriptionValue,
-        markers: []
+        title: recordingTitle || `🎙️ تسجيل صوتي (${(lecture.recordings || []).length + 1})`,
+        durationSeconds: duration, timestamp: new Date().toISOString(),
+        type: 'audio', transcription: cleanTranscriptionValue, markers: []
       };
-      const updatedRecordings = [...lecture.recordings, newRec];
-      updateLectureData(lecture.id, { recordings: updatedRecordings });
+      updateLectureData(lecture.id, { recordings: [...(lecture.recordings || []), newRec] });
     }
     setRecordingTitle("تسجيل صفي جديد...");
   };
@@ -1372,18 +1355,26 @@ export default function App() {
     const newFacing = cameraFacing === 'user' ? 'environment' : 'user';
     setCameraFacing(newFacing);
     if (!isVideoRecording) return;
-    // Stop current stream tracks
-    if (videoStream) videoStream.getTracks().forEach(t => t.stop());
     try {
+      // Neutralize old recorder's onstop so it doesn't trigger a partial save
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.onstop = null;
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          try { mediaRecorderRef.current.stop(); } catch(_) {}
+        }
+        mediaRecorderRef.current = null;
+      }
+      // Stop old stream tracks
+      if (videoStream) videoStream.getTracks().forEach(t => { try { t.stop(); } catch(_) {} });
+
       const newStream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: newFacing },
         audio: true
       });
       setVideoStream(newStream);
-      // Restart MediaRecorder on new stream
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try { mediaRecorderRef.current.stop(); } catch(e) {}
-      }
+
+      // Reset chunks so the new segment starts clean
+      audioChunksRef.current = [];
       const videoMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
         ? 'video/webm;codecs=vp9,opus'
         : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'audio/webm';
@@ -1571,128 +1562,98 @@ export default function App() {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       const mr = mediaRecorderRef.current;
       const capturedLectureId = lecture.id;
-      const capturedRecordingsCount = lecture.recordings.length;
+      const capturedRecordingsCount = (lecture.recordings || []).length;
+      mediaRecorderRef.current = null;
       mr.onstop = async () => {
-        if (audioChunksRef.current.length === 0) return;
-        const mimeType = audioChunksRef.current[0]?.type || 'video/webm';
-        const blob = new Blob(audioChunksRef.current, { type: mimeType });
-        pendingBlobsRef.current.set(recId, blob);
-        const url = URL.createObjectURL(blob);
-        blobUrlsRef.current.set(recId, url);
-        setPendingBlobIds(prev => new Set([...prev, recId]));
-
-        const isVideoBlob = mimeType.startsWith('video/');
-
-        // Save recording immediately with "جاري التفريغ..." indicator
-        const initialRec: AudioRecording = {
-          id: recId,
-          title: `${isVideoBlob ? '🎥' : '🎙️'} تسجيل ${isVideoBlob ? 'فيديو' : 'صوتي'} المحاضرة (${capturedRecordingsCount + 1})`,
-          durationSeconds: duration,
-          timestamp: new Date().toISOString(),
-          type: isVideoBlob ? 'video' : 'audio',
-          transcription: "🔄 جاري التفريغ التلقائي بالذكاء الاصطناعي...",
-          audioBlobUrl: url,
-          videoUrl: isVideoBlob ? url : undefined,
-          markers: []
-        };
-        setAppState(prev => ({
-          ...prev,
-          lectures: prev.lectures.map(l =>
-            l.id === capturedLectureId
-              ? { ...l, recordings: [...l.recordings, initialRec] }
-              : l
-          )
-        }));
-
-        // ✅ AUTO-TRANSCRIBE: Extract audio and send to Gemini
-        setIsTranscribing(recId);
         try {
-          // For video blobs, extract audio by re-encoding to audio/webm
-          let transcribeBlob = blob;
-          if (isVideoBlob) {
-            // Try to extract audio track only for smaller upload
-            try {
-              const audioCtx = new AudioContext();
-              const arrayBuf = await blob.arrayBuffer();
-              const audioBuffer = await audioCtx.decodeAudioData(arrayBuf);
-              const offlineCtx = new OfflineAudioContext(
-                audioBuffer.numberOfChannels,
-                audioBuffer.length,
-                audioBuffer.sampleRate
-              );
-              const src = offlineCtx.createBufferSource();
-              src.buffer = audioBuffer;
-              src.connect(offlineCtx.destination);
-              src.start(0);
-              await offlineCtx.startRendering();
-              audioCtx.close();
-              // Use the original blob as fallback — Gemini can handle video/webm with audio
-            } catch {
-              // If audio extraction fails, send the full video blob — Gemini handles it
-            }
+          if (audioChunksRef.current.length === 0) return;
+          const mimeType = audioChunksRef.current[0]?.type || 'video/webm';
+          const blob = new Blob(audioChunksRef.current, { type: mimeType });
+          audioChunksRef.current = [];
+          pendingBlobsRef.current.set(recId, blob);
+          const url = URL.createObjectURL(blob);
+          blobUrlsRef.current.set(recId, url);
+          setPendingBlobIds(prev => new Set([...prev, recId]));
+
+          const isVideoBlob = mimeType.startsWith('video/');
+          const initialRec: AudioRecording = {
+            id: recId,
+            title: `${isVideoBlob ? '🎥' : '🎙️'} تسجيل ${isVideoBlob ? 'فيديو' : 'صوتي'} المحاضرة (${capturedRecordingsCount + 1})`,
+            durationSeconds: duration,
+            timestamp: new Date().toISOString(),
+            type: isVideoBlob ? 'video' : 'audio',
+            transcription: "🔄 جاري التفريغ التلقائي...",
+            audioBlobUrl: url,
+            videoUrl: isVideoBlob ? url : undefined,
+            markers: []
+          };
+          setAppState(prev => ({
+            ...prev,
+            lectures: prev.lectures.map(l =>
+              l.id === capturedLectureId
+                ? { ...l, recordings: [...(l.recordings || []), initialRec] }
+                : l
+            )
+          }));
+
+          setIsTranscribing(recId);
+          try {
+            const response = await fetch('/api/ai/transcribe', {
+              method: 'POST',
+              headers: { 'Content-Type': blob.type || 'audio/webm' },
+              body: blob,
+            });
+            if (!response.ok) throw new Error("فشل الخادم " + response.status);
+            const data = await response.json();
+            const transcript = (data.transcript || "").trim();
+            setAppState(prev => ({
+              ...prev,
+              lectures: prev.lectures.map(l =>
+                l.id === capturedLectureId
+                  ? {
+                      ...l,
+                      lectureText: transcript || l.lectureText,
+                      recordings: (l.recordings || []).map(r =>
+                        r.id === recId
+                          ? { ...r, transcription: transcript || cleanTranscriptionValue || "لم يُكتشف كلام." }
+                          : r
+                      )
+                    }
+                  : l
+              )
+            }));
+            if (transcript) setLectureTextEdit(transcript);
+          } catch (e: any) {
+            console.warn("Auto video transcription failed:", e.message);
+            setAppState(prev => ({
+              ...prev,
+              lectures: prev.lectures.map(l =>
+                l.id === capturedLectureId
+                  ? { ...l, recordings: (l.recordings || []).map(r => r.id === recId ? { ...r, transcription: cleanTranscriptionValue || "⚠️ فشل التفريغ." } : r) }
+                  : l
+              )
+            }));
+          } finally {
+            setIsTranscribing(null);
           }
-
-          const response = await fetch('/api/ai/transcribe', {
-            method: 'POST',
-            headers: { 'Content-Type': transcribeBlob.type || 'audio/webm' },
-            body: transcribeBlob,
-          });
-          if (!response.ok) throw new Error("فشل الخادم " + response.status);
-          const data = await response.json();
-          const transcript = (data.transcript || "").trim();
-
-          setAppState(prev => ({
-            ...prev,
-            lectures: prev.lectures.map(l =>
-              l.id === capturedLectureId
-                ? {
-                    ...l,
-                    lectureText: transcript || l.lectureText,
-                    recordings: l.recordings.map(r =>
-                      r.id === recId
-                        ? { ...r, transcription: transcript || cleanTranscriptionValue || "لم يُكتشف كلام في التسجيل." }
-                        : r
-                    )
-                  }
-                : l
-            )
-          }));
-          if (transcript) setLectureTextEdit(transcript);
-        } catch (e: any) {
-          console.warn("Auto video transcription failed:", e.message);
-          setAppState(prev => ({
-            ...prev,
-            lectures: prev.lectures.map(l =>
-              l.id === capturedLectureId
-                ? {
-                    ...l,
-                    recordings: l.recordings.map(r =>
-                      r.id === recId
-                        ? { ...r, transcription: cleanTranscriptionValue || "⚠️ فشل التفريغ التلقائي — اضغط 'إعادة تحويل' يدوياً." }
-                        : r
-                    )
-                  }
-                : l
-            )
-          }));
-        } finally {
+        } catch (outerErr) {
+          console.warn("Video recording save error:", outerErr);
           setIsTranscribing(null);
         }
       };
       mr.stop();
-      mediaRecorderRef.current = null;
     } else {
       // No MediaRecorder — save with speech-to-text transcript only
       const newRec: AudioRecording = {
         id: recId,
-        title: `🎙️ تسجيل صوتي (${lecture.recordings.length + 1})`,
+        title: `🎙️ تسجيل صوتي (${(lecture.recordings || []).length + 1})`,
         durationSeconds: duration,
         timestamp: new Date().toISOString(),
         type: 'audio',
         transcription: cleanTranscriptionValue || "لا يوجد ميكروفون متاح.",
         markers: []
       };
-      updateLectureData(lecture.id, { recordings: [...lecture.recordings, newRec] });
+      updateLectureData(lecture.id, { recordings: [...(lecture.recordings || []), newRec] });
     }
   };
 
@@ -1770,7 +1731,7 @@ export default function App() {
     setPendingBlobIds(prev => { const n = new Set(prev); n.delete(recId); return n; });
 
     updateLectureData(lecture.id, {
-      recordings: lecture.recordings.filter(r => r.id !== recId),
+      recordings: (lecture.recordings || []).filter(r => r.id !== recId),
     });
   };
 
@@ -4319,28 +4280,60 @@ export default function App() {
                                   <span>التسجيلات والفيديو 🎙️</span>
                                   <span>({(lecture.recordings || []).filter(r => (r.folderId || null) === currentFolderId).length})</span>
                                 </h5>
-                                <div className="space-y-2">
-                                  {(lecture.recordings || []).filter(r => (r.folderId || null) === currentFolderId).map(rec => (
-                                    <div key={rec.id} className="flex flex-col gap-2 p-2 bg-slate-900/50 rounded-lg border border-slate-800/50">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-[11px] text-slate-200 truncate max-w-[120px] text-right font-medium">{rec.title}</span>
-                                        <div className="flex gap-1 shrink-0">
-                                          <button onClick={() => handleDeleteRecording(rec.id)} className="p-1.5 rounded-md text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition-colors" title="حذف">🗑️</button>
-                                          <button onClick={() => setPlayingVideoId(playingVideoId === rec.id ? null : rec.id)} className={`p-1.5 rounded-md transition-colors ${playingVideoId === rec.id ? 'bg-indigo-950/60 text-indigo-200' : 'text-indigo-400 hover:bg-indigo-950/40 hover:text-indigo-300'}`} title="تشغيل">▶️</button>
-                                          <button onClick={() => handleTranscribeRecording(rec.id)} className="p-1.5 rounded-md text-emerald-400 hover:bg-emerald-950/40 hover:text-emerald-300 transition-colors" title={rec.type === 'video' ? "تحويل الفيديو لنص" : "تحويل الصوت لنص"}>📝</button>
-                                          {rec.type === 'video' && (
-                                              <button onClick={() => alert("جاري استخراج المسار الصوتي للتحويل...")} className="p-1.5 rounded-md text-amber-400 hover:bg-amber-950/40 hover:text-amber-300 transition-colors" title="استخراج الصوت">🎵</button>
-                                          )}
+                                <div className="space-y-2.5">
+                                  {(lecture.recordings || []).filter(r => (r.folderId || null) === currentFolderId).map(rec => {
+                                    const isVid = rec.type === 'video';
+                                    const mediaUrl = (rec as any).videoUrl || (rec as any).audioBlobUrl || undefined;
+                                    const isPlaying = playingVideoId === rec.id;
+                                    const dmins = String(Math.floor((rec.durationSeconds || 0) / 60)).padStart(2,'0');
+                                    const dsecs = String((rec.durationSeconds || 0) % 60).padStart(2,'0');
+                                    return (
+                                      <div key={rec.id} className={`rounded-xl border overflow-hidden ${isVid ? 'bg-indigo-950/20 border-indigo-800/30' : 'bg-slate-900/60 border-slate-800/50'}`}>
+                                        {/* Header */}
+                                        <div className="flex items-center justify-between gap-2 px-3 py-2">
+                                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${isVid ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/25' : 'bg-amber-500/15 text-amber-400 border-amber-500/25'}`}>
+                                              {isVid ? '🎥 فيديو' : '🎙️ صوت'}
+                                            </span>
+                                            <span className="text-[9px] font-mono text-slate-500 bg-slate-950/60 px-1.5 py-0.5 rounded-full">{dmins}:{dsecs}</span>
+                                          </div>
+                                          <span className="text-[10px] font-semibold text-slate-300 truncate max-w-[110px] text-right">{rec.title}</span>
+                                        </div>
+                                        {/* Media player */}
+                                        {isPlaying && mediaUrl && (
+                                          <div className="px-3 pb-2">
+                                            {isVid ? (
+                                              <video controls src={mediaUrl} className="w-full rounded-lg border border-indigo-900/30 max-h-36 bg-black" preload="metadata" />
+                                            ) : (
+                                              <audio controls src={mediaUrl} className="w-full h-8 rounded-lg" preload="metadata" />
+                                            )}
+                                          </div>
+                                        )}
+                                        {/* Action strip */}
+                                        <div className="flex items-center gap-1 px-3 pb-2.5 flex-wrap">
+                                          <button
+                                            onClick={() => setPlayingVideoId(isPlaying ? null : rec.id)}
+                                            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${isPlaying ? 'bg-indigo-700 text-white' : 'bg-slate-800 hover:bg-indigo-800 text-slate-300 hover:text-white border border-slate-700'}`}
+                                          >
+                                            {isPlaying ? '⏹ إيقاف' : '▶ تشغيل'}
+                                          </button>
+                                          <button
+                                            onClick={() => handleTranscribeRecording(rec.id)}
+                                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 hover:bg-emerald-800 text-slate-300 hover:text-white border border-slate-700 transition-all"
+                                          >
+                                            ✦ تحويل نص
+                                          </button>
                                           <FolderSelector itemId={rec.id} type="recording" />
+                                          <button
+                                            onClick={() => handleDeleteRecording(rec.id)}
+                                            className="mr-auto flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-950 hover:bg-rose-900/50 text-rose-500 hover:text-rose-300 border border-rose-900/20 hover:border-rose-700 transition-all"
+                                          >
+                                            🗑 حذف
+                                          </button>
                                         </div>
                                       </div>
-                                      {playingVideoId === rec.id && (
-                                        <div className="w-full">
-                                          <video controls className="w-full rounded-md shadow-lg" src={rec.videoUrl || rec.audioBlobUrl || undefined} />
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
@@ -5130,7 +5123,7 @@ export default function App() {
                     )}
 
                     {/* Show empty lecture text panel hint when there are recordings but no text yet */}
-                    {!lecture.lectureText && !lectureTextEdit && lecture.recordings.length > 0 && (
+                    {!lecture.lectureText && !lectureTextEdit && (lecture.recordings || []).length > 0 && (
                       <div className="bg-slate-950/60 border border-dashed border-emerald-900/30 rounded-xl p-4 text-center space-y-1">
                         <p className="text-[11px] font-extrabold text-emerald-500/70">📄 نص المحاضرة</p>
                         <p className="text-[10px] text-slate-600 font-sansArabic">
