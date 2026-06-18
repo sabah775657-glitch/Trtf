@@ -1182,54 +1182,10 @@ export default function App() {
     setIsVoiceRecording(true);
     voiceActiveRef.current = true;
     voiceDedupeRef.current = [];
-    setLiveTranscriptText("جاري تشغيل ميكروفون المستمع الصوتي الذكي... 🎙️\n");
     setNewLectureTitle("");
 
-    // Web Speech API for real-time transcript display
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const startRecognition = () => {
-        if (!voiceActiveRef.current) return;
-        try {
-          const recognition = new SpeechRecognition();
-          recognition.continuous = true;
-          recognition.interimResults = false;
-          recognition.lang = "ar-SA";
-          recognition.onresult = (event: any) => {
-            let latestText = "";
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              if (event.results[i].isFinal) {
-                const seg = event.results[i][0].transcript.trim();
-                if (!seg) continue;
-                // Dedup: skip if this exact segment was recently added
-                if (voiceDedupeRef.current.includes(seg)) continue;
-                voiceDedupeRef.current.push(seg);
-                if (voiceDedupeRef.current.length > 20) voiceDedupeRef.current.shift();
-                latestText += " " + seg;
-              }
-            }
-            if (latestText.trim()) {
-              setLiveTranscriptText(prev => prev + latestText);
-            }
-          };
-          recognition.onerror = (e: any) => {
-            if (e.error !== "no-speech" && e.error !== "network") {
-              console.warn("Speech recognition error:", e.error);
-            }
-          };
-          recognition.onend = () => {
-            if (voiceActiveRef.current) setTimeout(startRecognition, 300);
-          };
-          recognition.start();
-          (window as any)._activeSpeechRec = recognition;
-        } catch (e) {
-          console.warn("Real-time Web Speech recognition startup blocked:", e);
-        }
-      };
-      startRecognition();
-    }
-
-    // Also start MediaRecorder to capture real audio for Gemini transcription
+    // Silent MediaRecorder — NO Web Speech API (prevents browser chime)
+    // Transcription happens via Gemini AFTER the user stops recording
     navigator.mediaDevices.getUserMedia({ audio: true, video: false })
       .then(stream => {
         audioChunksRef.current = [];
@@ -1248,13 +1204,6 @@ export default function App() {
   const handleStopVoiceRecording = () => {
     voiceActiveRef.current = false;
     setIsVoiceRecording(false);
-    if ((window as any)._activeSpeechRec) {
-      try {
-        (window as any)._activeSpeechRec.onend = null;
-        (window as any)._activeSpeechRec.stop();
-        delete (window as any)._activeSpeechRec;
-      } catch (e) {}
-    }
 
     const lecture = getSelectedLecture();
     if (!lecture) return;
@@ -1399,7 +1348,6 @@ export default function App() {
     try {
       setVideoSeconds(0);
       videoDedupeRef.current = [];
-      setLiveTranscriptText("جاري تشغيل كاميرا المحاضرة والمستمع الصوتي... 📹\n");
 
       // Request camera + microphone
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -1407,47 +1355,13 @@ export default function App() {
         audio: true
       });
 
-      // ✅ Set stream — useEffect will bind it to videoPreviewRef automatically
+      // Set stream — useEffect will bind it to videoPreviewRef automatically
       setVideoStream(stream);
       setIsVideoRecording(true);
       videoSpeechActiveRef.current = true;
+      // NO Web Speech API here — silent recording only; Gemini transcribes after stop
 
-      // Web Speech recognition for real-time Arabic transcript display
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const startVideoSpeech = () => {
-          if (!videoSpeechActiveRef.current) return;
-          try {
-            const rec = new SpeechRecognition();
-            rec.continuous = true;
-            rec.interimResults = false;
-            rec.lang = "ar-SA";
-            rec.onresult = (ev: any) => {
-              let latest = "";
-              for (let i = ev.resultIndex; i < ev.results.length; ++i) {
-                if (ev.results[i].isFinal) {
-                  const seg = ev.results[i][0].transcript.trim();
-                  if (!seg) continue;
-                  if (videoDedupeRef.current.includes(seg)) continue;
-                  videoDedupeRef.current.push(seg);
-                  if (videoDedupeRef.current.length > 20) videoDedupeRef.current.shift();
-                  latest += " " + seg;
-                }
-              }
-              if (latest.trim()) setLiveTranscriptText(p => p + latest);
-            };
-            rec.onerror = (e: any) => {
-              if (e.error !== "no-speech" && e.error !== "network") console.warn("Video speech recognition error:", e.error);
-            };
-            rec.onend = () => { if (videoSpeechActiveRef.current) setTimeout(startVideoSpeech, 300); };
-            rec.start();
-            (window as any)._activeVideoSpeechRec = rec;
-          } catch (e) {}
-        };
-        startVideoSpeech();
-      }
-
-      // ✅ FIX: Record FULL stream (video + audio) not just audio tracks
+      // Record FULL stream (video + audio) — audio extracted server-side for transcription
       try {
         audioChunksRef.current = [];
         // Pick best supported video mimeType
@@ -1545,13 +1459,6 @@ export default function App() {
   const handleStopVideoRecording = () => {
     videoSpeechActiveRef.current = false;
     setIsVideoRecording(false);
-    if ((window as any)._activeVideoSpeechRec) {
-      try {
-        (window as any)._activeVideoSpeechRec.onend = null;
-        (window as any)._activeVideoSpeechRec.stop();
-        delete (window as any)._activeVideoSpeechRec;
-      } catch (e) {}
-    }
     if (videoStream) {
       videoStream.getTracks().forEach((track) => track.stop());
       setVideoStream(null);
@@ -4937,8 +4844,8 @@ export default function App() {
                             </div>
                           )}
 
-                          {/* Live transcription real-time display panel with layout insert option */}
-                          {(isVoiceRecording || isVideoRecording || liveTranscriptText) && (
+                          {/* Live transcription panel — only visible during active dictation */}
+                          {(isDictating && liveTranscriptText) && (
                             <div className="p-4 bg-indigo-950/20 border border-indigo-505/30 rounded-xl space-y-3 text-right">
                               <div className="flex items-center justify-between text-xs pb-2 border-b border-indigo-900/40">
                                 <span className="bg-red-950 border border-red-900 text-red-500 text-[9px] px-2 py-0.5 rounded animate-pulse">
@@ -5322,8 +5229,8 @@ export default function App() {
                     <div className={`relative transition-all duration-300 ${
                       layoutMode === 'phone' 
                         ? 'max-w-[420px] mx-auto border-[10px] border-slate-900 rounded-[36px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] overflow-y-auto bg-slate-950' 
-                        : ''
-                    }`} style={layoutMode === 'phone' ? { maxHeight: "85vh" } : { minHeight: "calc(100vh - 220px)" }}>
+                        : 'flex flex-col'
+                    }`} style={layoutMode === 'phone' ? { maxHeight: "85vh" } : { minHeight: "calc(100vh - 240px)", height: "calc(100vh - 240px)" }}>
                       
                       {layoutMode === 'phone' && (
                         <div className="sticky top-0 inset-x-0 h-5 bg-slate-900 z-50 flex items-center justify-center shrink-0">
@@ -5331,7 +5238,7 @@ export default function App() {
                         </div>
                       )}
 
-                      <div className={layoutMode === 'phone' ? 'pt-2' : ''}>
+                      <div className={layoutMode === 'phone' ? 'pt-2' : 'flex flex-col flex-1 h-full'}>
                         {/* Floating Speed Dial & Quick action buttons */}
                         {showFloatingQuickActions && lecture.pages.length > 0 && (
                           <div className="absolute top-4 left-4 z-45 flex flex-col gap-2 p-1.5 bg-slate-950/85 backdrop-blur border border-slate-800 rounded-2xl shadow-2xl select-none text-right">
