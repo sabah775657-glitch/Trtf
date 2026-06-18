@@ -298,6 +298,10 @@ export default function App() {
   // Device Layout Simulation mode ('desktop' for full experience, 'phone' for native mobile frame preview)
   const [layoutMode, setLayoutMode] = useState<'desktop' | 'phone'>('desktop');
 
+  // Collapsible panel states
+  const [isFloatingPanelCollapsed, setIsFloatingPanelCollapsed] = useState(false);
+  const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
+
   // Lecturer Video recording parameters 
   const [isVideoRecording, setIsVideoRecording] = useState(false);
   const [videoSeconds, setVideoSeconds] = useState(0);
@@ -3601,7 +3605,7 @@ export default function App() {
       </header>
 
         {/* Outer view swapper panel */}
-        <main className="flex-1 p-4 md:p-6 space-y-6 relative">
+        <main className={`flex-1 space-y-6 relative ${layoutMode === 'phone' ? 'p-1 sm:p-2' : 'p-4 md:p-6'}`}>
           
           {/* Academic Breadcrumb Status Bar (شريط تتبع المسار الدراسي الفوري للتكيف الفوري) */}
           {isEditingBreadcrumb ? (
@@ -5015,35 +5019,50 @@ export default function App() {
                         <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                           <div className="flex items-center gap-2">
                             <button
-                              onClick={() => {
-                                updateLectureData(lecture.id, { lectureText: lectureTextEdit });
-                              }}
-                              className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-black rounded-lg transition cursor-pointer"
+                              onClick={() => setIsTranscriptCollapsed(!isTranscriptCollapsed)}
+                              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded-lg transition cursor-pointer"
+                              title={isTranscriptCollapsed ? "توسيع نص المحاضرة" : "طي نص المحاضرة"}
                             >
-                              💾 حفظ التعديلات
+                              {isTranscriptCollapsed ? '▶ توسيع' : '▼ طي'}
                             </button>
-                            <button
-                              onClick={handleInsertTranscriptToCanvas}
-                              className="px-3 py-1 bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white text-[10px] font-bold rounded-lg transition cursor-pointer"
-                            >
-                              📥 إدراج في الدفتر
-                            </button>
+                            {!isTranscriptCollapsed && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    updateLectureData(lecture.id, { lectureText: lectureTextEdit });
+                                  }}
+                                  className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-black rounded-lg transition cursor-pointer"
+                                >
+                                  💾 حفظ التعديلات
+                                </button>
+                                <button
+                                  onClick={handleInsertTranscriptToCanvas}
+                                  className="px-3 py-1 bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white text-[10px] font-bold rounded-lg transition cursor-pointer"
+                                >
+                                  📥 إدراج في الدفتر
+                                </button>
+                              </>
+                            )}
                           </div>
                           <h3 className="font-extrabold text-emerald-400 text-xs flex items-center gap-1.5">
                             <span>📄 نص المحاضرة</span>
                           </h3>
                         </div>
-                        <textarea
-                          dir="rtl"
-                          value={lectureTextEdit}
-                          onChange={(e) => setLectureTextEdit(e.target.value)}
-                          rows={8}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-[11px] text-slate-200 font-sansArabic leading-relaxed resize-y focus:outline-none focus:border-emerald-700 transition placeholder-slate-600"
-                          placeholder="سيظهر نص المحاضرة هنا بعد الضغط على 'تحويل إلى نص' في أحد التسجيلات أعلاه..."
-                        />
-                        <p className="text-[9px] text-slate-600 text-left">
-                          تم آخر تحديث: {new Date().toLocaleTimeString('ar-SA')} · يمكنك التعديل والحفظ
-                        </p>
+                        {!isTranscriptCollapsed && (
+                          <>
+                            <textarea
+                              dir="rtl"
+                              value={lectureTextEdit}
+                              onChange={(e) => setLectureTextEdit(e.target.value)}
+                              rows={8}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-[11px] text-slate-200 font-sansArabic leading-relaxed resize-y focus:outline-none focus:border-emerald-700 transition placeholder-slate-600"
+                              placeholder="سيظهر نص المحاضرة هنا بعد الضغط على 'تحويل إلى نص' في أحد التسجيلات أعلاه..."
+                            />
+                            <p className="text-[9px] text-slate-600 text-left">
+                              تم آخر تحديث: {new Date().toLocaleTimeString('ar-SA')} · يمكنك التعديل والحفظ
+                            </p>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -5227,23 +5246,17 @@ export default function App() {
                     </div>
 
                     {/* Integrated Canvas Workstage Board */}
-                    <div className={`relative transition-all duration-300 ${
-                      layoutMode === 'phone' 
-                        ? 'max-w-[420px] mx-auto border-[10px] border-slate-900 rounded-[36px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] overflow-y-auto bg-slate-950' 
-                        : 'flex flex-col'
-                    }`} style={layoutMode === 'phone' ? { maxHeight: "85vh" } : { minHeight: "calc(100vh - 240px)", height: "calc(100vh - 240px)" }}>
-                      
-                      {layoutMode === 'phone' && (
-                        <div className="sticky top-0 inset-x-0 h-5 bg-slate-900 z-50 flex items-center justify-center shrink-0">
-                          <div className="w-16 h-4 bg-black rounded-b-xl absolute top-0" />
-                        </div>
-                      )}
+                    <div className={`relative transition-all duration-300 flex flex-col`} style={layoutMode === 'phone' ? { minHeight: "calc(100vh - 120px)", height: "calc(100vh - 120px)" } : { minHeight: "calc(100vh - 240px)", height: "calc(100vh - 240px)" }}>
 
-                      <div className={layoutMode === 'phone' ? 'pt-2' : 'flex flex-col flex-1 h-full'}>
+                      <div className="flex flex-col flex-1 h-full">
                         {/* Floating Speed Dial & Quick action buttons */}
                         {showFloatingQuickActions && lecture.pages.length > 0 && (
                           <div className="absolute top-4 left-4 z-45 flex flex-col gap-2 p-1.5 bg-slate-950/85 backdrop-blur border border-slate-800 rounded-2xl shadow-2xl select-none text-right">
-                            <span className="text-[8px] text-indigo-400 font-extrabold text-center block pb-1 border-b border-slate-800">تفريغ وميديا</span>
+                            <button onClick={() => setIsFloatingPanelCollapsed(!isFloatingPanelCollapsed)} className="text-[8px] text-indigo-400 font-extrabold text-center block pb-1 border-b border-slate-800 cursor-pointer hover:text-indigo-300 transition">
+                              {isFloatingPanelCollapsed ? '▶ تفريغ وميديا' : '▼ تفريغ وميديا'}
+                            </button>
+                            {!isFloatingPanelCollapsed && (<>
+                            
                             
                             {/* Snap Camera Photo button */}
                             <button
@@ -5307,6 +5320,7 @@ export default function App() {
                               <Sparkles className="w-4 h-4 text-indigo-400" />
                               <span className="absolute right-12 top-1 bg-slate-950 border border-indigo-950 text-[9px] text-white px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">تفريق الصوت لكتابة</span>
                             </button>
+                            </>)}
                           </div>
                         )}
 
