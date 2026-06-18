@@ -1301,8 +1301,15 @@ export default function App() {
 
           setIsTranscribing(recId);
           try {
+            const audioMime = blob.type.startsWith('video/') ? 'audio/webm' : (blob.type || 'audio/webm');
+            const txHeaders: Record<string, string> = { 'Content-Type': audioMime };
+            const storedKey = localStorage.getItem("customAiKey")?.trim() || "";
+            if (storedKey) {
+              txHeaders['x-custom-api-key'] = storedKey;
+              txHeaders['x-custom-provider'] = localStorage.getItem("aiProvider") || "gemini";
+            }
             const response = await fetch('/api/ai/transcribe', {
-              method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob,
+              method: 'POST', headers: txHeaders, body: blob,
             });
             if (!response.ok) throw new Error("فشل الخادم");
             const data = await response.json();
@@ -1598,9 +1605,17 @@ export default function App() {
 
           setIsTranscribing(recId);
           try {
+            // Normalise video blobs → audio/webm so Gemini transcription accepts them
+            const sendMime = blob.type.startsWith('video/') ? 'audio/webm' : (blob.type || 'audio/webm');
+            const vidTxHeaders: Record<string, string> = { 'Content-Type': sendMime };
+            const storedKeyV = localStorage.getItem("customAiKey")?.trim() || "";
+            if (storedKeyV) {
+              vidTxHeaders['x-custom-api-key'] = storedKeyV;
+              vidTxHeaders['x-custom-provider'] = localStorage.getItem("aiProvider") || "gemini";
+            }
             const response = await fetch('/api/ai/transcribe', {
               method: 'POST',
-              headers: { 'Content-Type': blob.type || 'audio/webm' },
+              headers: vidTxHeaders,
               body: blob,
             });
             if (!response.ok) throw new Error("فشل الخادم " + response.status);
@@ -1670,8 +1685,11 @@ export default function App() {
 
     setIsTranscribing(recId);
     try {
+      // Normalise video blobs to audio/webm – WebM containers carry audio tracks
+      // that Gemini can transcribe; video/* MIME types are rejected by the model
+      const blobMime = blob.type.startsWith('video/') ? 'audio/webm' : (blob.type || 'audio/webm');
       const headers: Record<string, string> = {
-        'Content-Type': blob.type || 'audio/webm',
+        'Content-Type': blobMime,
       };
       if (customAiKey.trim()) {
         headers['x-custom-api-key'] = customAiKey.trim();
@@ -3070,7 +3088,7 @@ export default function App() {
 
   // 1. Left Sidebar navigation - Converted to overlay drawer panel
   return (
-    <div className={`min-h-screen bg-slate-900 text-slate-100 flex flex-col md:flex-row font-sansArabic relative overflow-hidden ${
+    <div className={`min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sansArabic relative ${
       isDarkMode ? "night-mode" : ""
     }`}>
       {!isFocusMode && (
@@ -6635,30 +6653,6 @@ export default function App() {
             onChange={handleCameraFileSelected}
           />
 
-          {/* Floating live transcript indicator — visible while recording */}
-          {(isVoiceRecording || isVideoRecording) && liveTranscriptText && (
-            <div
-              className="fixed bottom-24 left-4 z-[9999] max-w-xs w-72 bg-slate-950/95 border border-indigo-500/60 rounded-2xl shadow-2xl p-3 space-y-2 text-right backdrop-blur-sm"
-              dir="rtl"
-            >
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="flex items-center gap-1 text-red-400 font-black">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping inline-block" />
-                  تسجيل نشط
-                </span>
-                <span className="text-indigo-300 font-bold">📝 التفريغ الفوري</span>
-              </div>
-              <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-4">
-                {liveTranscriptText.replace(/^جاري تشغيل ميكروفون المستمع الصوتي الذكي\.\.\. 🎙️|^جاري تشغيل كاميرا المحاضرة والمستمع الصوتي\.\.\. 📹/g, "").trim() || "في انتظار كلام الأستاذ..."}
-              </p>
-              <button
-                onClick={handleInsertTranscriptToCanvas}
-                className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black rounded-lg transition cursor-pointer"
-              >
-                📥 إدراج النص في الدفتر
-              </button>
-            </div>
-          )}
 
         </div>
 

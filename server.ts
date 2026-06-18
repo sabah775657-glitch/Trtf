@@ -839,7 +839,12 @@ app.post("/api/ai/transcribe",
       }
 
       const rawMime = (req.headers['content-type'] as string) || 'audio/webm';
-      const mimeType = rawMime.split(';')[0].trim();
+      let mimeType = rawMime.split(';')[0].trim();
+      // Gemini transcription handles audio/* well; video/webm containers also carry audio tracks
+      // Normalise any video/* type to audio/webm so the model treats it as audio
+      if (mimeType.startsWith('video/')) {
+        mimeType = 'audio/webm';
+      }
 
       const ai = getAI(req);
       const base64Audio = audioBuffer.toString('base64');
