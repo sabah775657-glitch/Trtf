@@ -140,3 +140,8 @@ body {
 .animate-slide-in-right {
   animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+@keyframes shrink-bar {
+  from { width: 100%; }
+  to   { width: 0%; }
+}

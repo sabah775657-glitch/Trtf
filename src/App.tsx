@@ -119,6 +119,7 @@ export default function App() {
   const [customAiKey, setCustomAiKey] = useState(() => localStorage.getItem("customAiKey") || "");
   const [showAiKeyModal, setShowAiKeyModal] = useState(false);
   const [isEditingAcademic, setIsEditingAcademic] = useState(false);
+  const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false);
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [academicDetails, setAcademicDetails] = useState(() => {
@@ -453,6 +454,16 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("unnoted_opened_lectures", JSON.stringify(openedLectureIds));
   }, [openedLectureIds]);
+
+  // Show welcome overlay on first open when no AI key is set, then auto-dismiss
+  useEffect(() => {
+    const key = localStorage.getItem("customAiKey") || "";
+    if (key.trim() === "") {
+      setShowWelcomeOverlay(true);
+      const timer = setTimeout(() => setShowWelcomeOverlay(false), 9000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   useEffect(() => {
     if (selectedLectureId && !openedLectureIds.includes(selectedLectureId)) {
@@ -3031,6 +3042,70 @@ export default function App() {
     <div className={`min-h-screen w-full max-w-full overflow-x-hidden bg-slate-900 text-slate-100 flex flex-col font-sansArabic relative ${
       isDarkMode ? "night-mode" : ""
     }`}>
+      {/* Welcome Overlay — shown for users without an activation code, auto-dismisses after 9s */}
+      {showWelcomeOverlay && (
+        <div
+          className="fixed inset-0 z-[1000] flex items-end justify-center pb-10 px-4"
+          style={{ pointerEvents: "none" }}
+        >
+          <div
+            className="relative w-full max-w-sm rounded-2xl border border-indigo-800/60 bg-slate-950/80 backdrop-blur-md p-5 text-right shadow-2xl"
+            style={{ pointerEvents: "auto" }}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setShowWelcomeOverlay(false)}
+              className="absolute top-2.5 left-3 text-slate-500 hover:text-slate-300 text-lg font-bold leading-none cursor-pointer"
+              style={{ pointerEvents: "auto" }}
+            >
+              ×
+            </button>
+
+            <div className="flex items-start gap-3">
+              <span className="text-3xl mt-0.5">🎓</span>
+              <div className="space-y-2 flex-1">
+                <p className="text-sm font-black text-white leading-snug">
+                  مرحباً بك في UnNoted Smart Notebook!
+                </p>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  لتفعيل مزايا الذكاء الاصطناعي، تواصل مع المالك للحصول على{" "}
+                  <span className="text-indigo-400 font-bold">كود تشغيل التطبيق</span>{" "}
+                  مجاناً 🔑
+                </p>
+                <div className="flex flex-col gap-1.5 pt-1">
+                  <a
+                    href="https://t.me/Abdu10Alkhaliq"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-[11px] text-indigo-400 hover:underline font-extrabold"
+                    style={{ pointerEvents: "auto" }}
+                  >
+                    <span>💬 تيليجرام: t.me/Abdu10Alkhaliq</span>
+                  </a>
+                  <a
+                    href="https://wa.me/966511040524"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-[11px] text-emerald-400 hover:underline font-extrabold"
+                    style={{ pointerEvents: "auto" }}
+                  >
+                    <span>🟢 واتساب: wa.me/966511040524</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Auto-dismiss progress bar */}
+            <div className="mt-3 h-0.5 rounded-full bg-slate-800 overflow-hidden">
+              <div
+                className="h-full bg-indigo-600 rounded-full"
+                style={{ animation: "shrink-bar 9s linear forwards" }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {!isFocusMode && (
         <>
           {/* Backdrop Overlay */}
@@ -6607,5 +6682,33 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* ─── Developer Credit Footer ─── */}
+      <div className="w-full bg-slate-950 border-t border-slate-800/60 py-3 px-4 flex flex-col items-center gap-1.5 text-center" dir="rtl">
+        <p className="text-[10px] text-slate-500 font-bold tracking-wide">
+          تم التطوير بواسطة المطور{" "}
+          <span className="text-slate-300">عبد الخالق علي</span>
+        </p>
+        <div className="flex items-center gap-4">
+          <a
+            href="https://t.me/Abdu10Alkhaliq"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[10px] text-indigo-400 hover:underline font-extrabold"
+          >
+            <span>💬 تيليجرام</span>
+          </a>
+          <span className="text-slate-700">|</span>
+          <a
+            href="https://wa.me/966511040524"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[10px] text-emerald-400 hover:underline font-extrabold"
+          >
+            <span>🟢 واتساب</span>
+          </a>
+        </div>
+      </div>
+
   );
 }
