@@ -1,12 +1,17 @@
-apply plugin: 'com.android.application'
+plugins {
+    id 'com.android.application'
+}
+
 apply from: '../variables.gradle'
 
 android {
-    compileSdkVersion rootProject.ext.compileSdkVersion
+    namespace "com.unnoted.app"
+    compileSdk rootProject.ext.compileSdkVersion
+    
     defaultConfig {
         applicationId "com.unnoted.app"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdk rootProject.ext.minSdkVersion
+        targetSdk rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
