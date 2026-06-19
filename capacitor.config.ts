@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.unnoted.smartnotebook',
+  appId: 'com.unnoted.app',
   appName: 'UnNoted',
   webDir: 'dist',
   server: {
