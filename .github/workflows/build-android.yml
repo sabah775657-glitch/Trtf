@@ -152,22 +152,43 @@ jobs:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g -Dorg.gradle.configureondemand=false"
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
+      - name: Find APK file
+        run: |
+          echo "=== Searching for APK files ==="
+          find android -type f -name "*.apk" 2>/dev/null
+          echo "=== Full build outputs structure ==="
+          find android/app/build/outputs -type d 2>/dev/null | head -20
+
       - name: Verify APK exists
         run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          if [ ! -f "$APK" ]; then
-            echo "❌ APK not found — searching build outputs:"
-            find android/app/build -type f -name "*.apk" 2>/dev/null || echo "No APKs anywhere in build dir"
+          APK_CANDIDATES=(
+            "android/app/build/outputs/apk/debug/app-debug.apk"
+            "android/app/build/outputs/apk/release/app-release-unsigned.apk"
+            "android/app/build/outputs/bundle/debug/app-debug.aab"
+          )
+          
+          APK_FOUND=""
+          for apk in "${APK_CANDIDATES[@]}"; do
+            if [ -f "$apk" ]; then
+              APK_FOUND="$apk"
+              echo "✅ APK found: $apk ($(du -h "$apk" | cut -f1))"
+              break
+            fi
+          done
+          
+          if [ -z "$APK_FOUND" ]; then
+            echo "❌ APK not found in expected locations"
             echo "=== Full gradle-build.log ==="
             cat /tmp/gradle-build.log
             exit 1
           fi
-          echo "✅ APK found: $(du -h $APK | cut -f1)"
+          
+          echo "APK_FILE=$APK_FOUND" >> $GITHUB_ENV
 
       - name: Rename APK
         run: |
           mkdir -p output
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
+          cp "${{ env.APK_FILE }}" \
              output/UnNoted-Android-debug-v${{ github.run_number }}.apk
 
       - name: Upload Debug APK artifact
@@ -206,7 +227,7 @@ jobs:
         continue-on-error: true
         run: |
           APK_PATH="output/UnNoted-Android-debug-v${{ github.run_number }}.apk"
-          CAPTION="📱 *UnNoted - Android APK*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: \`${{ github.sha }}\`%0A%0Aحمّل وث[...]"
+          CAPTION="📱 *UnNoted - Android APK*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: \`${{ github.sha }}\`%0A%0Aحمّل وث[...]
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
             -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
