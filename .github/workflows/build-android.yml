@@ -14,17 +14,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --ignore-engines
+        run: npm install --legacy-peer-deps
 
       - name: Build web app (Vite)
-        run: npx vite build
+        run: npm run build
         env:
           NODE_ENV: production
 
@@ -43,11 +43,10 @@ jobs:
 
       - name: Install Android SDK platforms and build tools
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
-          sdkmanager "platforms;android-33" "build-tools;33.0.3" || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" 2>/dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null || true
           echo "=== Installed SDK packages ==="
-          sdkmanager --list_installed 2>/dev/null | grep -E "platforms|build-tools" | head -20 || true
+          sdkmanager --list_installed 2>/dev/null | grep -E "platforms|build-tools" || true
 
       - name: Add Android platform
         run: |
@@ -58,27 +57,16 @@ jobs:
             echo "Android project already exists"
           fi
 
-      - name: Verify Android structure
+      - name: Verify Gradle files exist
         run: |
-          echo "=== Android directory structure ==="
-          ls -la android/ 2>/dev/null || echo "No android directory"
-          echo "=== Looking for build.gradle ==="
-          find android -name "build.gradle" -o -name "settings.gradle" 2>/dev/null || echo "No Gradle files found"
+          echo "=== Checking Gradle files ==="
+          test -f "android/build.gradle" && echo "✅ android/build.gradle exists" || echo "❌ Missing android/build.gradle"
+          test -f "android/settings.gradle" && echo "✅ android/settings.gradle exists" || echo "❌ Missing android/settings.gradle"
+          test -f "android/app/build.gradle" && echo "✅ android/app/build.gradle exists" || echo "❌ Missing android/app/build.gradle"
+          test -f "android/variables.gradle" && echo "✅ android/variables.gradle exists" || echo "❌ Missing android/variables.gradle"
+          test -f "android/gradlew" && echo "✅ android/gradlew exists" || echo "❌ Missing android/gradlew"
 
-      - name: Generate app icons from resources
-        run: npx @capacitor/assets generate --android --iconBackgroundColor '#0f172a' --iconBackgroundColorDark '#0f172a' --splashBackgroundColor '#0f172a' --splashBackgroundColorDark '#0f172a'
-        continue-on-error: true
-
-      - name: Sync Capacitor
-        run: npx cap sync android
-
-      - name: Verify Capacitor sync
-        run: |
-          echo "=== Checking android directory after sync ==="
-          ls -la android/
-          ls -la android/app/src/ 2>/dev/null || echo "app/src not found"
-
-      - name: Restore stable Android build configs
+      - name: Restore variables.gradle with stable versions
         run: |
           cat > android/variables.gradle << 'VARS_EOF'
           ext {
@@ -98,17 +86,15 @@ jobs:
               cordovaAndroidVersion = '14.0.1'
           }
           VARS_EOF
-          
+          echo "✅ variables.gradle restored"
+          cat android/variables.gradle
+
+      - name: Restore root build.gradle
+        run: |
           cat > android/build.gradle << 'GRADLE_EOF'
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.7.3'
-                  classpath 'com.google.gms:google-services:4.4.2'
-              }
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+              id 'com.google.gms.google-services' version '4.4.2' apply false
           }
 
           apply from: "variables.gradle"
@@ -124,72 +110,83 @@ jobs:
               delete rootProject.buildDir
           }
           GRADLE_EOF
-          
-          echo "=== variables.gradle ==="
-          cat android/variables.gradle
-          echo "=== build.gradle ==="
-          cat android/build.gradle
+          echo "✅ root build.gradle restored"
+
+      - name: Verify Android structure
+        run: |
+          echo "=== Android directory structure ==="
+          ls -la android/ || echo "No android directory"
+          echo "=== Build files present ==="
+          find android -maxdepth 2 -name "*.gradle" -type f 2>/dev/null | sort || echo "No gradle files found"
+
+      - name: Generate app icons from resources
+        run: npx @capacitor/assets generate --android --iconBackgroundColor '#0f172a' --iconBackgroundColorDark '#0f172a' --splashBackgroundColor '#0f172a' --splashBackgroundColorDark '#0f172a' 2>/dev/null || true
+        continue-on-error: true
+
+      - name: Sync Capacitor
+        run: npx cap sync android
 
       - name: Make gradlew executable
-        run: chmod +x android/gradlew
+        run: |
+          chmod +x android/gradlew
+          ls -la android/gradlew
 
-      - name: Clean Gradle cache (fresh build)
+      - name: Verify Gradle wrapper
         working-directory: android
-        run: ./gradlew clean
+        run: ./gradlew --version
+
+      - name: Clean Gradle cache
+        working-directory: android
+        run: ./gradlew clean --no-daemon
 
       - name: Build Debug APK
         working-directory: android
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            2>&1 | tee /tmp/gradle-build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           if [ $BUILD_EXIT -ne 0 ]; then
-            echo "=== GRADLE BUILD FAILED — last 200 lines ==="
-            tail -200 /tmp/gradle-build.log
+            echo "=== GRADLE BUILD FAILED ==="
+            tail -500 /tmp/gradle-build.log
             exit $BUILD_EXIT
           fi
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g -Dorg.gradle.configureondemand=false"
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          JAVA_HOME: ${{ env.JAVA_HOME }}
 
       - name: Find APK file
         run: |
           echo "=== Searching for APK files ==="
-          find android -type f -name "*.apk" 2>/dev/null
-          echo "=== Full build outputs structure ==="
-          find android/app/build/outputs -type d 2>/dev/null | head -20
+          find android -type f -name "*.apk" 2>/dev/null || echo "No APK found"
+          echo "=== Full build outputs ==="
+          find android/app/build/outputs -type d 2>/dev/null | head -30 || echo "No outputs directory"
 
-      - name: Verify APK exists
+      - name: Verify APK exists and set path
         run: |
-          APK_CANDIDATES=(
-            "android/app/build/outputs/apk/debug/app-debug.apk"
-            "android/app/build/outputs/apk/release/app-release-unsigned.apk"
-            "android/app/build/outputs/bundle/debug/app-debug.aab"
-          )
+          APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
           
-          APK_FOUND=""
-          for apk in "${APK_CANDIDATES[@]}"; do
-            if [ -f "$apk" ]; then
-              APK_FOUND="$apk"
-              echo "✅ APK found: $apk ($(du -h "$apk" | cut -f1))"
-              break
-            fi
-          done
-          
-          if [ -z "$APK_FOUND" ]; then
-            echo "❌ APK not found in expected locations"
-            echo "=== Full gradle-build.log ==="
-            cat /tmp/gradle-build.log
+          if [ ! -f "$APK_PATH" ]; then
+            echo "❌ APK not found at: $APK_PATH"
+            echo "=== Gradle build log (last 300 lines) ==="
+            tail -300 /tmp/gradle-build.log || cat /tmp/gradle-build.log
             exit 1
           fi
           
-          echo "APK_FILE=$APK_FOUND" >> $GITHUB_ENV
+          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+          echo "✅ APK found: $APK_PATH ($APK_SIZE)"
+          echo "APK_FILE=$APK_PATH" >> $GITHUB_ENV
 
-      - name: Rename APK
+      - name: Prepare APK for upload
         run: |
           mkdir -p output
-          cp "${{ env.APK_FILE }}" \
-             output/UnNoted-Android-debug-v${{ github.run_number }}.apk
+          cp "${{ env.APK_FILE }}" "output/UnNoted-Android-debug-v${{ github.run_number }}.apk"
+          echo "✅ APK prepared for upload"
+          ls -lh output/
 
       - name: Upload Debug APK artifact
         uses: actions/upload-artifact@v4
@@ -200,12 +197,14 @@ jobs:
 
       - name: Build Release APK (unsigned)
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-release.log
         continue-on-error: true
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Upload Release APK artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: UnNoted-Android-release-${{ github.run_number }}
@@ -213,34 +212,39 @@ jobs:
           retention-days: 30
         continue-on-error: true
 
-      - name: Upload Gradle build log on failure
+      - name: Upload Gradle logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-build-log-${{ github.run_number }}
-          path: /tmp/gradle-build.log
+          name: gradle-logs-${{ github.run_number }}
+          path: |
+            /tmp/gradle-build.log
+            /tmp/gradle-release.log
           retention-days: 7
         continue-on-error: true
 
-      - name: Send APK to Telegram
+      - name: Send APK to Telegram (Success)
         if: success()
         continue-on-error: true
         run: |
           APK_PATH="output/UnNoted-Android-debug-v${{ github.run_number }}.apk"
-          CAPTION="📱 *UnNoted - Android APK*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: \`${{ github.sha }}\`%0A%0Aحمّل وث[...]
+          CAPTION="📱 *UnNoted - Android APK*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: \`${{ github.sha }}\`"
+          
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
             -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             -F "document=@${APK_PATH}" \
             -F "caption=${CAPTION}" \
-            -F "parse_mode=Markdown"
+            -F "parse_mode=Markdown" || true
 
-      - name: Notify on failure
+      - name: Send Failure Notification to Telegram
         if: failure()
         continue-on-error: true
         run: |
+          TEXT="❌ فشل بناء Android APK في Build %23${{ github.run_number }}%0A%0ARepository: ${{ github.repository }}%0ABranch: ${{ github.ref_name }}%0A%0ADetails: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "text=❌ فشل بناء Android APK في Build %23${{ github.run_number }}%0A%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            -d "parse_mode=Markdown"
+            -d "text=${TEXT}" \
+            -d "parse_mode=Markdown" || true
