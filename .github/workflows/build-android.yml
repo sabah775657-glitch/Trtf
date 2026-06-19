@@ -33,6 +33,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: 'gradle'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -50,9 +51,19 @@ jobs:
 
       - name: Add Android platform
         run: |
-          if [ ! -d "android" ]; then
+          if [ ! -d "android" ] || [ ! -f "android/settings.gradle" ]; then
+            echo "Creating Android project with Capacitor..."
             npx cap add android
+          else
+            echo "Android project already exists"
           fi
+
+      - name: Verify Android structure
+        run: |
+          echo "=== Android directory structure ==="
+          ls -la android/ 2>/dev/null || echo "No android directory"
+          echo "=== Looking for build.gradle ==="
+          find android -name "build.gradle" -o -name "settings.gradle" 2>/dev/null || echo "No Gradle files found"
 
       - name: Generate app icons from resources
         run: npx @capacitor/assets generate --android --iconBackgroundColor '#0f172a' --iconBackgroundColorDark '#0f172a' --splashBackgroundColor '#0f172a' --splashBackgroundColorDark '#0f172a'
@@ -60,6 +71,12 @@ jobs:
 
       - name: Sync Capacitor
         run: npx cap sync android
+
+      - name: Verify Capacitor sync
+        run: |
+          echo "=== Checking android directory after sync ==="
+          ls -la android/
+          ls -la android/app/src/ 2>/dev/null || echo "app/src not found"
 
       - name: Restore stable Android build configs
         run: |
@@ -81,6 +98,7 @@ jobs:
               cordovaAndroidVersion = '14.0.1'
           }
           VARS_EOF
+          
           cat > android/build.gradle << 'GRADLE_EOF'
           buildscript {
               repositories {
@@ -106,6 +124,7 @@ jobs:
               delete rootProject.buildDir
           }
           GRADLE_EOF
+          
           echo "=== variables.gradle ==="
           cat android/variables.gradle
           echo "=== build.gradle ==="
@@ -114,23 +133,19 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-
+      - name: Clean Gradle cache (fresh build)
+        working-directory: android
+        run: ./gradlew clean
 
       - name: Build Debug APK
         working-directory: android
         run: |
+          set -o pipefail
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           if [ $BUILD_EXIT -ne 0 ]; then
-            echo "=== GRADLE BUILD FAILED — last 150 lines ==="
-            tail -150 /tmp/gradle-build.log
+            echo "=== GRADLE BUILD FAILED — last 200 lines ==="
+            tail -200 /tmp/gradle-build.log
             exit $BUILD_EXIT
           fi
         env:
@@ -142,7 +157,9 @@ jobs:
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           if [ ! -f "$APK" ]; then
             echo "❌ APK not found — searching build outputs:"
-            find android/app/build -name "*.apk" 2>/dev/null || echo "No APKs anywhere in build dir"
+            find android/app/build -type f -name "*.apk" 2>/dev/null || echo "No APKs anywhere in build dir"
+            echo "=== Full gradle-build.log ==="
+            cat /tmp/gradle-build.log
             exit 1
           fi
           echo "✅ APK found: $(du -h $APK | cut -f1)"
@@ -189,7 +206,7 @@ jobs:
         continue-on-error: true
         run: |
           APK_PATH="output/UnNoted-Android-debug-v${{ github.run_number }}.apk"
-          CAPTION="📱 *UnNoted - Android APK*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: \`${{ github.sha }}\`%0A%0Aحمّل وثبّت على أي جهاز أندرويد."
+          CAPTION="📱 *UnNoted - Android APK*%0A%0A✅ Build %23${{ github.run_number }} مكتمل%0A🌿 Branch: ${{ github.ref_name }}%0A📝 Commit: \`${{ github.sha }}\`%0A%0Aحمّل وث[...]"
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
             -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
