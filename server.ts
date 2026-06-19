@@ -107,7 +107,9 @@ async function executeGeminiOrOpenRouterCall(req: express.Request, systemPrompt:
 
     const ai = getAI(req);
     const fullContents = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
-    const config: any = {};
+    const config: any = {
+      thinkingConfig: { thinkingBudget: 0 }
+    };
     if (systemSchema) {
       config.responseMimeType = "application/json";
       config.responseSchema = systemSchema;
@@ -185,7 +187,8 @@ async function executeVisionCall(req: express.Request, promptText: string, base6
 
     const response = await generateContentWithRetryAndFallback(ai, {
       model: "gemini-2.5-flash",
-      contents: [imagePart, { text: promptText }]
+      contents: [imagePart, { text: promptText }],
+      config: { thinkingConfig: { thinkingBudget: 0 } }
     });
 
     return response.text || "";
@@ -351,12 +354,13 @@ app.post("/api/ai/validate-key", async (req, res) => {
       });
 
       // Simple, fast, low-cost token usage check to verify validity
-      // Use gemini-2.0-flash for validation (stable, no thinking-budget restrictions)
+      // Use gemini-2.5-flash (same as Google AI Studio default) with thinking disabled for instant validation
       await testAi.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: "Hi",
         config: {
-          maxOutputTokens: 5
+          maxOutputTokens: 2,
+          thinkingConfig: { thinkingBudget: 0 }
         }
       });
 
