@@ -126,17 +126,17 @@ export default function App() {
     try {
       const stored = localStorage.getItem("academicDetails");
       return stored ? JSON.parse(stored) : {
-        university: "جامعة الملك سعود",
-        college: "كلية علوم الحاسب والمعلومات",
-        department: "قسم تقنية المعلومات",
-        level: "المستوى الخامس",
+        university: "",
+        college: "",
+        department: "",
+        level: "",
       };
     } catch {
       return {
-        university: "جامعة الملك سعود",
-        college: "كلية علوم الحاسب والمعلومات",
-        department: "قسم تقنية المعلومات",
-        level: "المستوى الخامس",
+        university: "",
+        college: "",
+        department: "",
+        level: "",
       };
     }
   });
@@ -2079,6 +2079,53 @@ export default function App() {
     });
   };
 
+  // Handle gallery import: supports multiple image/video/audio files at once
+  const handleGalleryImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    const lecture = getSelectedLecture();
+    if (!lecture) {
+      alert("يرجى اختيار محاضرة أو إنشاء واحدة أولاً!");
+      event.target.value = "";
+      return;
+    }
+
+    setIsParsingDocument(true);
+    try {
+      const newDocs: LectureDocument[] = [];
+      for (const file of files) {
+        const fileData = await convertFileToBase64(file);
+        const name = file.name || `ملف-${Date.now()}`;
+        const nameLower = name.toLowerCase();
+        let detectedType = file.type;
+        if (!detectedType) {
+          if (['.jpg','.jpeg','.png','.gif','.webp','.bmp','.heic','.heif'].some(e => nameLower.endsWith(e))) detectedType = 'image/jpeg';
+          else if (['.mp4','.mov','.avi','.webm','.mkv'].some(e => nameLower.endsWith(e))) detectedType = 'video/mp4';
+          else if (['.mp3','.wav','.m4a','.ogg','.aac'].some(e => nameLower.endsWith(e))) detectedType = 'audio/mpeg';
+          else detectedType = 'application/octet-stream';
+        }
+        newDocs.push({
+          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          name,
+          type: detectedType,
+          sizeKb: Math.floor(file.size / 1024),
+          base64: fileData,
+          timestamp: new Date().toISOString(),
+          folderId: currentFolderId || undefined,
+        });
+      }
+      const updatedDocs = [...(lecture.documents || []), ...newDocs];
+      updateLectureData(lecture.id, { documents: updatedDocs });
+      alert(`✅ تم استيراد ${newDocs.length} ${newDocs.length === 1 ? 'ملف' : 'ملفات'} بنجاح إلى المحاضرة!`);
+    } catch (e: any) {
+      alert("❌ فشل استيراد بعض الملفات: " + (e?.message || "خطأ غير معروف"));
+    } finally {
+      setIsParsingDocument(false);
+      event.target.value = "";
+    }
+  };
+
   // Process Document upload (PDF, PowerPoint, Excel, text, video, image, audio) and append Cornell page loaded with summarizes
   const handleParseDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -3818,29 +3865,37 @@ export default function App() {
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-2 py-1 px-1 w-full max-w-full overflow-hidden select-none" dir="rtl">
               <div className="flex flex-wrap items-center gap-1.5">
-                {/* University Tag */}
-                <div className="inline-flex items-center gap-1 bg-slate-900/90 border border-slate-800/80 px-2 py-1 rounded-lg text-white font-extrabold shadow-sm">
-                  <span className="text-[9px] text-slate-500 font-normal">الجامعة:</span>
-                  <span className="text-[10px]">{appState.universities.find(u => u.id === activeUnivId)?.name || academicDetails.university || "جامعة الملك سعود"}</span>
-                </div>
+                {/* University Tag — only shown when value is set */}
+                {(appState.universities.find(u => u.id === activeUnivId)?.name || academicDetails.university?.trim()) ? (
+                  <div className="inline-flex items-center gap-1 bg-slate-900/90 border border-slate-800/80 px-2 py-1 rounded-lg text-white font-extrabold shadow-sm">
+                    <span className="text-[9px] text-slate-500 font-normal">الجامعة:</span>
+                    <span className="text-[10px]">{appState.universities.find(u => u.id === activeUnivId)?.name || academicDetails.university}</span>
+                  </div>
+                ) : null}
 
-                {/* College Tag */}
-                <div className="inline-flex items-center gap-1 bg-slate-900/95 border border-slate-800/80 px-2 py-1 rounded-lg text-slate-200 font-extrabold shadow-sm">
-                  <span className="text-[9px] text-slate-500 font-normal">الكلية:</span>
-                  <span className="text-[10px]">{academicDetails.college || "علوم الحاسب"}</span>
-                </div>
+                {/* College Tag — only shown when value is set */}
+                {academicDetails.college?.trim() ? (
+                  <div className="inline-flex items-center gap-1 bg-slate-900/95 border border-slate-800/80 px-2 py-1 rounded-lg text-slate-200 font-extrabold shadow-sm">
+                    <span className="text-[9px] text-slate-500 font-normal">الكلية:</span>
+                    <span className="text-[10px]">{academicDetails.college}</span>
+                  </div>
+                ) : null}
 
-                {/* Department Tag */}
-                <div className="inline-flex items-center gap-1 bg-slate-900/60 border border-slate-800/60 px-2 py-1 rounded-lg text-slate-300 font-bold shadow-sm">
-                  <span className="text-[9px] text-slate-505 font-normal">القسم/السنة:</span>
-                  <span className="text-[10px]">{((appState.years || []).find(y => y.id === activeYearId)?.name) || academicDetails.department || "تقنية المعلومات"}</span>
-                </div>
+                {/* Department Tag — only shown when value is set */}
+                {(((appState.years || []).find(y => y.id === activeYearId)?.name) || academicDetails.department?.trim()) ? (
+                  <div className="inline-flex items-center gap-1 bg-slate-900/60 border border-slate-800/60 px-2 py-1 rounded-lg text-slate-300 font-bold shadow-sm">
+                    <span className="text-[9px] text-slate-505 font-normal">القسم/السنة:</span>
+                    <span className="text-[10px]">{((appState.years || []).find(y => y.id === activeYearId)?.name) || academicDetails.department}</span>
+                  </div>
+                ) : null}
 
-                {/* Level Tag */}
-                <div className="inline-flex items-center gap-1 bg-slate-900/60 border border-slate-800/60 px-2 py-1 rounded-lg text-slate-400 font-bold shadow-sm">
-                  <span className="text-[9px] text-slate-505 font-normal">المستوى:</span>
-                  <span className="text-[10px]">{academicDetails.level || "المستوى الخامس"}</span>
-                </div>
+                {/* Level Tag — only shown when value is set */}
+                {academicDetails.level?.trim() ? (
+                  <div className="inline-flex items-center gap-1 bg-slate-900/60 border border-slate-800/60 px-2 py-1 rounded-lg text-slate-400 font-bold shadow-sm">
+                    <span className="text-[9px] text-slate-505 font-normal">المستوى:</span>
+                    <span className="text-[10px]">{academicDetails.level}</span>
+                  </div>
+                ) : null}
 
                 {/* Subject Material */}
                 <div className="inline-flex items-center gap-1 bg-emerald-950/40 border border-emerald-900/30 px-2.5 py-1 rounded-lg text-emerald-400 font-black shadow-sm">
@@ -4773,7 +4828,7 @@ export default function App() {
                               </label>
                             </div>
 
-                            {/* Row 3: Import from phone gallery / storage */}
+                            {/* Row 3: Import from phone gallery / storage (multiple files) */}
                             <label className="flex items-center justify-center gap-2 p-2.5 bg-slate-900 hover:bg-rose-950/30 border border-slate-800 hover:border-rose-800/50 text-rose-300 rounded-xl text-[11px] font-bold cursor-pointer transition duration-150 w-full">
                               <span className="text-base leading-none">🖼️</span>
                               <span>{isParsingDocument ? "جاري الاستيراد..." : "استيراد صور · فيديوهات · تسجيلات من الذاكرة"}</span>
@@ -4781,7 +4836,7 @@ export default function App() {
                                 type="file"
                                 accept="image/*,video/*,audio/*"
                                 multiple
-                                onChange={handleParseDocumentUpload}
+                                onChange={handleGalleryImport}
                                 className="hidden"
                                 disabled={isParsingDocument}
                               />
@@ -6222,19 +6277,37 @@ export default function App() {
                 <div className="p-6 overflow-y-auto flex-1 bg-slate-900/45 space-y-4 font-sansArabic">
                   {(() => {
                     const isPdf = activeViewingDoc.type === 'application/pdf' || activeViewingDoc.name.endsWith('.pdf');
-                    const isImg = activeViewingDoc.type.startsWith('image/');
-                    const isVid = activeViewingDoc.type.startsWith('video/');
-                    const isAud = activeViewingDoc.type.startsWith('audio/') || activeViewingDoc.name.endsWith('.mp3') || activeViewingDoc.name.endsWith('.wav') || activeViewingDoc.name.endsWith('.m4a');
+                    const _docName = (activeViewingDoc.name || '').toLowerCase();
+                    const isImg = activeViewingDoc.type.startsWith('image/') || 
+                                  ['.jpg','.jpeg','.png','.gif','.webp','.bmp','.heic','.heif','.svg'].some(e => _docName.endsWith(e));
+                    const isVid = activeViewingDoc.type.startsWith('video/') ||
+                                  ['.mp4','.mov','.avi','.webm','.mkv'].some(e => _docName.endsWith(e));
+                    const isAud = activeViewingDoc.type.startsWith('audio/') || 
+                                  ['.mp3','.wav','.m4a','.ogg','.aac'].some(e => _docName.endsWith(e));
                     const isTxt = activeViewingDoc.type.startsWith('text/') || activeViewingDoc.name.endsWith('.txt');
 
                     if (isImg) {
+                      // Convert base64 data URL to blob URL for reliable rendering
+                      let imgSrc = activeViewingDoc.base64 || '';
+                      try {
+                        if (imgSrc.startsWith('data:')) {
+                          const parts = imgSrc.split(',');
+                          const mime = parts[0].match(/:(.*?);/)?.[1] || activeViewingDoc.type || 'image/jpeg';
+                          const byteChars = atob(parts[1]);
+                          const byteArr = new Uint8Array(byteChars.length);
+                          for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+                          imgSrc = URL.createObjectURL(new Blob([byteArr], { type: mime }));
+                        }
+                      } catch {}
                       return (
-                        <div className="flex flex-col items-center justify-center p-2 bg-slate-950/20 border border-slate-800 rounded-2xl">
+                        <div className="flex flex-col items-center justify-center p-2 bg-slate-950/20 border border-slate-800 rounded-2xl min-h-[200px]">
                           <img 
-                            src={activeViewingDoc.base64} 
+                            src={imgSrc}
                             alt={activeViewingDoc.name} 
-                            className="max-w-full max-h-[60vh] rounded-xl shadow-xl object-contain border border-slate-800/80" 
+                            className="max-w-full max-h-[60vh] w-auto rounded-xl shadow-xl object-contain border border-slate-800/80"
+                            style={{ display: 'block', minWidth: 80, minHeight: 80 }}
                           />
+                          <p className="text-[10px] text-slate-500 mt-2 text-center">{activeViewingDoc.name}</p>
                         </div>
                       );
                     }

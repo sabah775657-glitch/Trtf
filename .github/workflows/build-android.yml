@@ -40,10 +40,13 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses 2>/dev/null || true
 
-      - name: Install Android SDK 35 and build tools
+      - name: Install Android SDK platforms and build tools
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0.3" 2>/dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
+          sdkmanager "platforms;android-33" "build-tools;33.0.3" || true
+          echo "=== Installed SDK packages ==="
+          sdkmanager --list_installed 2>/dev/null | grep -E "platforms|build-tools" | head -20 || true
 
       - name: Add Android platform
         run: |
@@ -58,23 +61,88 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Restore stable Android build configs
+        run: |
+          cat > android/variables.gradle << 'VARS_EOF'
+          ext {
+              minSdkVersion = 24
+              compileSdkVersion = 35
+              targetSdkVersion = 35
+              androidxActivityVersion = '1.9.3'
+              androidxAppCompatVersion = '1.7.0'
+              androidxCoordinatorLayoutVersion = '1.2.0'
+              androidxCoreVersion = '1.13.1'
+              androidxFragmentVersion = '1.8.5'
+              coreSplashScreenVersion = '1.0.1'
+              androidxWebkitVersion = '1.12.1'
+              junitVersion = '4.13.2'
+              androidxJunitVersion = '1.2.1'
+              androidxEspressoCoreVersion = '3.6.1'
+              cordovaAndroidVersion = '14.0.1'
+          }
+          VARS_EOF
+          cat > android/build.gradle << 'GRADLE_EOF'
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.7.3'
+                  classpath 'com.google.gms:google-services:4.4.2'
+              }
+          }
+
+          apply from: "variables.gradle"
+
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          task clean(type: Delete) {
+              delete rootProject.buildDir
+          }
+          GRADLE_EOF
+          echo "=== variables.gradle ==="
+          cat android/variables.gradle
+          echo "=== build.gradle ==="
+          cat android/build.gradle
+
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
       - name: Build Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log
+          BUILD_EXIT=${PIPESTATUS[0]}
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "=== GRADLE BUILD FAILED — last 150 lines ==="
+            tail -150 /tmp/gradle-build.log
+            exit $BUILD_EXIT
+          fi
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4g -Dorg.gradle.configureondemand=false"
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Verify APK exists
         run: |
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           if [ ! -f "$APK" ]; then
-            echo "❌ APK not found — listing build outputs:"
-            find android/app/build -name "*.apk" 2>/dev/null || echo "No APKs in build dir"
-            find android/app/build -name "*.log" 2>/dev/null | xargs tail -50 2>/dev/null || true
+            echo "❌ APK not found — searching build outputs:"
+            find android/app/build -name "*.apk" 2>/dev/null || echo "No APKs anywhere in build dir"
             exit 1
           fi
           echo "✅ APK found: $(du -h $APK | cut -f1)"
@@ -105,6 +173,15 @@ jobs:
           name: UnNoted-Android-release-${{ github.run_number }}
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 30
+        continue-on-error: true
+
+      - name: Upload Gradle build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log-${{ github.run_number }}
+          path: /tmp/gradle-build.log
+          retention-days: 7
         continue-on-error: true
 
       - name: Send APK to Telegram
