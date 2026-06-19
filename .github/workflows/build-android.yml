@@ -14,10 +14,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -120,7 +120,7 @@ jobs:
           find android -maxdepth 2 -name "*.gradle" -type f 2>/dev/null | sort || echo "No gradle files found"
 
       - name: Generate app icons from resources
-        run: npx @capacitor/assets generate --android --iconBackgroundColor '#0f172a' --iconBackgroundColorDark '#0f172a' --splashBackgroundColor '#0f172a' --splashBackgroundColorDark '#0f172a' 2>/dev/null || true
+        run: npx @capacitor/assets generate --android --iconBackgroundColor '#0f172a' --iconBackgroundColorDark '#0f172a' --splashBackgroundColor '#0f172a' --splashBackgroundColorDark '#0f172a'
         continue-on-error: true
 
       - name: Sync Capacitor
