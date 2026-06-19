@@ -343,26 +343,21 @@ app.post("/api/ai/validate-key", async (req, res) => {
 
   try {
     if (prov === "gemini") {
-      // Create lightweight validator
-      const testAi = new GoogleGenAI({
-        apiKey: trimmedKey,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build-validator",
-          },
-        },
+      // Validate key by fetching the model list via REST — no inference, no quota usage,
+      // works identically to how Google AI Studio verifies a key.
+      const validationUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(trimmedKey)}&pageSize=1`;
+      const validationResp = await fetch(validationUrl, {
+        method: "GET",
+        headers: { "User-Agent": "aistudio-build-validator" }
       });
 
-      // Simple, fast, low-cost token usage check to verify validity
-      // Use gemini-2.5-flash (same as Google AI Studio default) with thinking disabled for instant validation
-      await testAi.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: "Hi",
-        config: {
-          maxOutputTokens: 2,
-          thinkingConfig: { thinkingBudget: 0 }
-        }
-      });
+      if (!validationResp.ok) {
+        const errBody = await validationResp.text();
+        let errMsg = errBody;
+        try { errMsg = JSON.parse(errBody)?.error?.message || errBody; } catch (_) {}
+        throw new Error(errMsg);
+      }
+      // If we reach here the key is confirmed valid by Google's own endpoint
 
       const permissions = [
         "الوصول الكامل إلى أدوات الذكر والمراجعة الأكاديمية 📚",
